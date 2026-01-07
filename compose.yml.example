@@ -1,6 +1,6 @@
 services:
   server:
-    image: itzg/minecraft-server:latest
+    image: itzg/minecraft-server:java25
     tty: true
     stdin_open: true
     ports:
@@ -8,10 +8,12 @@ services:
     expose:
       - "25575"
     environment:
+      VERSION: "1.21.1"
       EULA: "TRUE"
       ENABLE_RCON: "TRUE"
       RCON_PASSWORD: "testing123"
       RCON_PORT: "25575"
+      JVM_OPTS: "-XX:+UseCompactObjectHeaders -XX:+UseZGC"
     volumes:
       - ./test-server:/data
   ferrisquery:
