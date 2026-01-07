@@ -1,22 +1,13 @@
-use flate2::{
-    read::{GzDecoder, GzEncoder},
-    Compression,
-};
-use poise::{
-    serenity_prelude::{
-        futures::{self, Stream},
-        CreateAttachment,
-    },
-    CreateReply,
-};
+use flate2::{read::GzDecoder, write::GzEncoder, Compression};
+use poise::{serenity_prelude::CreateAttachment, CreateReply};
 use serde::{Deserialize, Serialize};
+use std::io::Write;
 use std::{collections::HashMap, fs::OpenOptions, io::Read, path::PathBuf, str::FromStr};
-use std::{io::Write, path::Path};
 
 use fastnbt::Value;
 use uuid_mc::{PlayerUuid, Uuid};
 
-use crate::{commands::get_uuid, Context, Error};
+use crate::{Context, Error};
 
 async fn autocomplete_dimension<'a>(
     _ctx: Context<'_>,
@@ -34,11 +25,13 @@ async fn autocomplete_dimension<'a>(
 }
 
 async fn autocomplete_offline_player_uuid(ctx: Context<'_>, partial: &str) -> Vec<String> {
-    let dir = ctx.data().server_directory.clone();
+    let dir = PathBuf::from(&*ctx.data().server_directory)
+        .join("world")
+        .join("playerdata");
 
     let Ok(Some(file_uuids)) = tokio::task::spawn_blocking(move || {
         Some(
-            std::fs::read_dir(PathBuf::from_str(&dir).ok()?)
+            std::fs::read_dir(dir)
                 .ok()?
                 .filter_map(Result::ok)
                 .filter_map(|e| {
@@ -81,8 +74,19 @@ pub async fn tp_offline(
     #[description = "Dimension ID"]
     #[autocomplete = "autocomplete_dimension"]
     dimension: Option<String>,
+    #[description = "Whether the user uses online or offline mode if using player name instead of UUID"]
+    mode: Option<crate::commands::OfflineOnline>,
 ) -> Result<(), Error> {
-    let uuid = PlayerUuid::new_with_uuid(Uuid::parse_str(&player)?)?;
+    let uuid = match Uuid::parse_str(&player) {
+        Ok(uuid) => PlayerUuid::new_with_uuid(uuid)?,
+        Err(_) => {
+            super::get_uuid(
+                &player,
+                mode.unwrap_or(crate::commands::OfflineOnline::Online),
+            )
+            .await?
+        }
+    };
 
     let path = {
         let mut filename = uuid.as_uuid().hyphenated().to_string();
@@ -161,6 +165,10 @@ pub async fn tp_offline(
         let mut encoder = GzEncoder::new(&temp_file, Compression::fast());
 
         encoder.write_all(&bytes)?;
+        encoder.finish()?;
+
+        // Drop and flush temporary file
+        drop(temp_file);
 
         // Drop and unlock the original .dat file
         drop(file);
@@ -194,7 +202,7 @@ pub struct PlayerData {
     pub pos: Vec<f64>,
     pub dimension: String,
 
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub root_vehicle: Option<RootVehicle>,
 
     #[serde(flatten)]

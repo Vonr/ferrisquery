@@ -46,12 +46,16 @@ impl Interface {
         };
 
         for p in players.split(", ") {
+            if p.is_empty() {
+                break;
+            }
+
             let Some((name, uuid)) = p.rsplit_once(" (") else {
-                return Err("Expected player information in form `name (uuid)` but could not find ` (` {p} in {list_output}".into());
+                return Err(format!("Expected player information in form `name (uuid)` but could not find ` (` for {p:?} in {list_output}").into());
             };
 
             let Some((uuid, _)) = uuid.rsplit_once(")") else {
-                return Err("Expected player information in form `name (uuid)` but could not find ending `)` {p} in {list_output}".into());
+                return Err(format!("Expected player information in form `name (uuid)` but could not find ending `)` for {p:?} in {list_output}").into());
             };
 
             list.push(PlayerInfo {
