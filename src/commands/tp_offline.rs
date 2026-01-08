@@ -2,11 +2,13 @@ use flate2::{read::GzDecoder, write::GzEncoder, Compression};
 use poise::{serenity_prelude::CreateAttachment, CreateReply};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
+use std::sync::{Arc, Mutex};
 use std::{collections::HashMap, fs::OpenOptions, io::Read, path::PathBuf, str::FromStr};
 
 use fastnbt::Value;
 use uuid_mc::{PlayerUuid, Uuid};
 
+use crate::interface::PlayerInfo;
 use crate::{Context, Error};
 
 async fn autocomplete_dimension<'a>(
@@ -24,38 +26,76 @@ async fn autocomplete_dimension<'a>(
         .filter(move |s| s.contains(partial))
 }
 
+#[allow(clippy::type_complexity)]
+static AUTOCOMPLETE_CACHE: Mutex<Option<(u128, Arc<[String]>, Arc<[PlayerInfo]>)>> =
+    Mutex::new(None);
+
 async fn autocomplete_offline_player_uuid(ctx: Context<'_>, partial: &str) -> Vec<String> {
-    let dir = PathBuf::from(&*ctx.data().server_directory)
-        .join("world")
-        .join("playerdata");
-
-    let Ok(Some(file_uuids)) = tokio::task::spawn_blocking(move || {
-        Some(
-            std::fs::read_dir(dir)
-                .ok()?
-                .filter_map(Result::ok)
-                .filter_map(|e| {
-                    e.file_name()
-                        .to_str()
-                        .and_then(|s| s.strip_suffix(".dat"))
-                        .map(ToString::to_string)
-                })
-                .collect::<Vec<_>>(),
-        )
-    })
-    .await
+    let Ok(time) = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
     else {
-        return vec![];
+        return Vec::new();
     };
 
-    let Ok(players) = ctx.data().interface.lock().await.player_list().await else {
-        return vec![];
+    let mut cached = match AUTOCOMPLETE_CACHE.lock().as_deref() {
+        Ok(Some((expiry, file_uuids, players))) if *expiry >= time => {
+            Some((file_uuids.clone(), players.clone()))
+        }
+        _ => None,
     };
+
+    if cached.is_none() {
+        let dir = PathBuf::from(&*ctx.data().server_directory)
+            .join("world")
+            .join("playerdata");
+
+        let Ok(Some(file_uuids)) = tokio::task::spawn_blocking(move || {
+            Some(
+                std::fs::read_dir(dir)
+                    .ok()?
+                    .filter_map(Result::ok)
+                    .filter_map(|e| {
+                        e.file_name()
+                            .to_str()
+                            .and_then(|s| s.strip_suffix(".dat"))
+                            .map(ToString::to_string)
+                    })
+                    .collect::<Arc<_>>(),
+            )
+        })
+        .await
+        else {
+            return Vec::new();
+        };
+
+        let Ok(players) = ctx
+            .data()
+            .interface
+            .lock()
+            .await
+            .player_list()
+            .await
+            .map(Arc::<[PlayerInfo]>::from)
+        else {
+            return Vec::new();
+        };
+
+        let Ok(mut cache) = AUTOCOMPLETE_CACHE.lock() else {
+            return Vec::new();
+        };
+
+        *cache = Some((time + 5000, file_uuids.clone(), players.clone()));
+
+        cached = Some((file_uuids, players));
+    };
+
+    let (file_uuids, players) = cached.unwrap();
 
     file_uuids
-        .into_iter()
+        .iter()
         .filter(|u| u.contains(partial))
-        .filter_map(|u| uuid_mc::Uuid::from_str(&u).ok())
+        .filter_map(|u| uuid_mc::Uuid::from_str(u).ok())
         .filter(|d| !players.iter().any(|p| p.uuid.as_uuid() == d))
         .map(|u| u.as_hyphenated().to_string())
         .collect()
@@ -87,6 +127,16 @@ pub async fn tp_offline(
             .await?
         }
     };
+
+    let players = ctx.data().interface.lock().await.player_list().await?;
+    if let Some(p) = players.iter().find(|p| p.uuid == uuid) {
+        return Err(format!(
+            "Player {} ({}) is currently online.",
+            p.name,
+            p.uuid.as_uuid().as_hyphenated()
+        )
+        .into());
+    }
 
     let path = {
         let mut filename = uuid.as_uuid().hyphenated().to_string();
