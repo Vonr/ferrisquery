@@ -41,3 +41,12 @@ You must also verify the following in `server.properties`:
 when creating your password. I recommend setting a random, long, strictly alphanumeric password to avoid problems.  
 Also note that the password is just a precaution, since as mentioned earlier your RCON port should not be open to the internet in the first place.
 - Optionally, set `broadcast-rcon-to-op` to `false` to prevent spamming the chat with the periodic `list` executions.
+
+### Testing with Docker Compose
+
+Make a copy of `compose.yml.example` to `compose.yml` and edit all the environment variables set to `"<change_me>"` to appropriate values.
+
+```sh
+cp compose.yml{.example,}
+$EDITOR compose.yml
+```
