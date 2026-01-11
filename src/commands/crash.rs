@@ -29,21 +29,29 @@ pub async fn crash(ctx: Context<'_>) -> Result<(), Error> {
     Ok(())
 }
 
-async fn get_latest_file(
-    directory: impl AsRef<Path>,
-) -> Result<(PathBuf, SystemTime), tokio::io::Error> {
-    let mut entries = vec![];
+async fn get_latest_file(directory: impl AsRef<Path>) -> Result<(PathBuf, SystemTime), Error> {
     let mut read_dir = fs::read_dir(directory).await?;
+    let mut latest: Option<(PathBuf, SystemTime)> = None;
 
     while let Some(dir_entry) = read_dir.next_entry().await? {
-        let metadata = dir_entry.metadata().await?;
+        let Ok(metadata) = dir_entry.metadata().await else {
+            eprintln!("Could not get metadata of {dir_entry:?}");
+            continue;
+        };
+
         if !metadata.is_file() {
             continue;
         }
-        entries.push((dir_entry, metadata.created()?))
+
+        let Ok(created) = metadata.created() else {
+            eprintln!("Could not get creation date of {dir_entry:?}");
+            continue;
+        };
+
+        if latest.as_ref().is_none_or(|(_, max)| *max < created) {
+            latest = Some((dir_entry.path(), created));
+        }
     }
 
-    entries.sort_unstable_by_key(|(_, created)| std::cmp::Reverse(*created));
-
-    Ok((entries[0].0.path(), entries[0].1))
+    latest.ok_or_else(|| "No files available".into())
 }
