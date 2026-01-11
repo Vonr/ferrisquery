@@ -1,3 +1,5 @@
+use itertools::Itertools;
+
 use crate::{Context, Error};
 
 const MAXLEN: usize = 2000 - "Success:\n```\n\n```".len();
@@ -13,15 +15,28 @@ pub async fn run(
 
     match interface.exec(&cmd).await {
         Ok(response) => {
-            let response = if response.chars().count() > MAXLEN {
-                response
-                    .chars()
-                    .take(MAXLEN - CUTOFF_SUFFIX.len())
-                    .chain(CUTOFF_SUFFIX.chars())
-                    .collect()
+            let mut within = response
+                .chars()
+                .take(MAXLEN - CUTOFF_SUFFIX.len())
+                .multipeek();
+
+            let mut arr = ['\0'; CUTOFF_SUFFIX.len()];
+            let mut len = 0;
+            for e in &mut arr {
+                let Some(&c) = within.peek() else {
+                    break;
+                };
+
+                *e = c;
+                len += 1;
+            }
+
+            let response: String = if within.peek().is_none() {
+                within.chain(arr[..len].iter().copied()).collect()
             } else {
-                response
+                within.chain(CUTOFF_SUFFIX.chars()).collect()
             };
+
             ctx.say(format!("Success:\n```\n{response}\n```")).await?;
         }
         Err(rcon::Error::Auth) => {
