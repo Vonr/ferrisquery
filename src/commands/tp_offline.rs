@@ -2,13 +2,11 @@ use flate2::{read::GzDecoder, write::GzEncoder, Compression};
 use poise::{serenity_prelude::CreateAttachment, CreateReply};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
-use std::sync::{Arc, Mutex};
-use std::{collections::HashMap, fs::OpenOptions, io::Read, path::PathBuf, str::FromStr};
+use std::{collections::HashMap, fs::OpenOptions, io::Read, path::PathBuf};
 
 use fastnbt::Value;
 use uuid_mc::{PlayerUuid, Uuid};
 
-use crate::interface::PlayerInfo;
 use crate::{Context, Error};
 
 async fn autocomplete_dimension<'a>(
@@ -26,88 +24,11 @@ async fn autocomplete_dimension<'a>(
         .filter(move |s| s.contains(partial))
 }
 
-#[allow(clippy::type_complexity)]
-static AUTOCOMPLETE_CACHE: Mutex<Option<(u128, Arc<[String]>, Arc<[PlayerInfo]>)>> =
-    Mutex::new(None);
-
-async fn autocomplete_offline_player_uuid(ctx: Context<'_>, partial: &str) -> Vec<String> {
-    let Ok(time) = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis())
-    else {
-        return Vec::new();
-    };
-
-    let mut cached = match AUTOCOMPLETE_CACHE.lock().as_deref() {
-        Ok(Some((expiry, file_uuids, players))) if *expiry >= time => {
-            Some((file_uuids.clone(), players.clone()))
-        }
-        _ => None,
-    };
-
-    if cached.is_none() {
-        let dir = PathBuf::from(&*ctx.data().server_directory)
-            .join("world")
-            .join("playerdata");
-
-        let Ok(Some(file_uuids)) = tokio::task::spawn_blocking(move || {
-            Some(
-                std::fs::read_dir(dir)
-                    .ok()?
-                    .filter_map(Result::ok)
-                    .filter_map(|e| {
-                        e.file_name()
-                            .to_str()
-                            .and_then(|s| s.strip_suffix(".dat"))
-                            .map(ToString::to_string)
-                    })
-                    .collect::<Arc<_>>(),
-            )
-        })
-        .await
-        else {
-            return Vec::new();
-        };
-
-        let Ok(players) = ctx
-            .data()
-            .interface
-            .lock()
-            .await
-            .player_list()
-            .await
-            .map(Arc::<[PlayerInfo]>::from)
-        else {
-            return Vec::new();
-        };
-
-        let Ok(mut cache) = AUTOCOMPLETE_CACHE.lock() else {
-            return Vec::new();
-        };
-
-        *cache = Some((time + 5000, file_uuids.clone(), players.clone()));
-
-        cached = Some((file_uuids, players));
-    };
-
-    let (file_uuids, players) = cached.unwrap();
-
-    file_uuids
-        .iter()
-        .filter(|u| u.contains(partial))
-        .filter_map(|u| uuid_mc::Uuid::from_str(u).ok())
-        .filter(|d| !players.iter().any(|p| p.uuid.as_uuid() == d))
-        .map(|u| u.as_hyphenated().to_string())
-        .collect()
-}
-
 /// Teleport an offline player.
 #[poise::command(slash_command, guild_only, check = "super::operator_only")]
 pub async fn tp_offline(
     ctx: Context<'_>,
-    #[description = "Name or UUID of the player"]
-    #[autocomplete = "autocomplete_offline_player_uuid"]
-    player: String,
+    #[description = "Name or UUID of the player"] player: String,
     #[description = "X coordinate"] x: f64,
     #[description = "Y coordinate"] y: f64,
     #[description = "Z coordinate"] z: f64,
