@@ -7,7 +7,7 @@ use std::{collections::HashMap, fs::OpenOptions, io::Read, path::PathBuf};
 use fastnbt::Value;
 use uuid_mc::{PlayerUuid, Uuid};
 
-use crate::{Context, Error};
+use crate::{server_status, Context, Error};
 
 async fn autocomplete_dimension<'a>(
     _ctx: Context<'_>,
@@ -49,12 +49,25 @@ pub async fn tp_offline(
         }
     };
 
-    let players = ctx.data().interface.lock().await.player_list().await?;
-    if let Some(p) = players.iter().find(|p| p.uuid == uuid) {
+    let players = match server_status::get_server_status(
+        &mut *ctx.data().interface.lock().await,
+        ctx.data().has_list_json,
+    )
+    .await?
+    {
+        server_status::ServerStatus::Offline => Vec::new(),
+        server_status::ServerStatus::Online(status) => status.list,
+    };
+
+    if let Some(p) = players
+        .iter()
+        .filter_map(|p| p.uuid.map(|uuid| (&p.name, uuid)))
+        .find(|p| p.1 == uuid)
+    {
         return Err(format!(
             "Player {} ({}) is currently online.",
-            p.name,
-            p.uuid.as_uuid().as_hyphenated()
+            p.0,
+            p.1.as_uuid().as_hyphenated()
         )
         .into());
     }
