@@ -60,13 +60,11 @@ pub async fn get_server_status(
 
             group((
                 just("There are ").ignored(),
-                text::int(10).try_map(|s, span| {
-                    i32::from_str_radix(s, 10).map_err(|e| Rich::custom(span, e))
-                }),
+                text::int(10)
+                    .try_map(|s: &str, span| s.parse::<i32>().map_err(|e| Rich::custom(span, e))),
                 just(" of a max of ").ignored(),
-                text::int(10).try_map(|s, span| {
-                    i32::from_str_radix(s, 10).map_err(|e| Rich::custom(span, e))
-                }),
+                text::int(10)
+                    .try_map(|s: &str, span| s.parse::<i32>().map_err(|e| Rich::custom(span, e))),
                 just(" players online: ").ignored(),
                 group((
                     any()
