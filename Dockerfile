@@ -24,9 +24,9 @@ RUN curl -L "https://github.com/rust-cross/cargo-zigbuild/releases/download/v${Z
 WORKDIR /app
 
 FROM chef AS planner
-COPY Cargo.toml Cargo.lock .
 RUN mkdir src
 RUN echo 'fn main(){}' > src/main.rs
+COPY Cargo.toml Cargo.lock .
 RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS builder
