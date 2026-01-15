@@ -1,5 +1,4 @@
 use rcon::Result;
-use uuid_mc::PlayerUuid;
 
 type Connection = rcon::Connection<tokio::net::TcpStream>;
 
