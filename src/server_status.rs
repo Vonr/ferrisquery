@@ -63,7 +63,7 @@ pub async fn get_server_status(
                 text::int(10).try_map(|s, span| {
                     i32::from_str_radix(s, 10).map_err(|e| Rich::custom(span, e))
                 }),
-                just(" of a max ").ignored(),
+                just(" of a max of ").ignored(),
                 text::int(10).try_map(|s, span| {
                     i32::from_str_radix(s, 10).map_err(|e| Rich::custom(span, e))
                 }),
