@@ -1,0 +1,40 @@
+services:
+  server:
+    image: itzg/minecraft-server:java25
+    tty: true
+    stdin_open: true
+    ports:
+      - "25565:25565"
+    expose:
+      - "25575"
+    environment:
+      VERSION: "1.21.1"
+      EULA: "TRUE"
+      ENABLE_RCON: "TRUE"
+      RCON_PASSWORD: "testing123"
+      RCON_PORT: "25575"
+      JVM_OPTS: "-XX:+UseCompactObjectHeaders -XX:+UseZGC"
+    volumes:
+      - ./test-server:/data
+  ferrisquery:
+    build: .
+    depends_on:
+      server:
+        condition: service_started
+        restart: false
+    volumes:
+      - ./test-server:/test-server
+    environment:
+      DISCORD_TOKEN: "<change_me>" # discord bot token. use 7318884118297686 as the permissions integer when inviting your bot.
+      OP_ROLE_ID: "<change_me>" # id for the role that is assigned to server operators.
+      LIST_CHANNEL_ID: "<change_me>" # id of the channel where the bot will post the updated player list.
+      RCON_ADDR: "server:25575" # address of the minecraft server.
+      RCON_PASS: "testing123" # password for the RCON protocol.
+      SERVER_DIR: "/test-server" # root directory where the minecraft server files reside.
+      # HAS_LIST_JSON: # signifies to the bot that the server supports boolean_coercion's "/list json" protocol.
+      # HAS_EASYAUTH: # signifies to the bot that the server uses EasyAuth and that its config file should be modified for offline mode users.
+      # DB_USERNAME: # specifies the username for both endpoints of the database API.
+      # DB_ADMIN_ENDPOINT: # specifies the URL of the /admin endpoint of the database API.
+      # DB_ADMIN_PASSWORD: # specifies the authentication password for the /admin endpoint of the database API.
+      # DB_USER_ENDPOINT: # specifies the URL of the /user endpoint of the database API.
+      # DB_USER_PASSWORD: # specifies the authentication password for the /user endpoint of the database API.
