@@ -1,2 +1,4 @@
 /target
 ferrisquery_cache.toml
+/test-server
+/compose.yml
